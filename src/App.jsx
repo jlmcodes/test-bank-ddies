@@ -15,7 +15,7 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_co
   ? JSON.parse(__firebase_config)
   : {
         apiKey: "AIzaSyCpwZ-gWDZQ4jATie2igPe51yK1aY37DEg",
-        authDomain: "test-bank-ddies.vercel.app",
+        authDomain: "test-bank-ddies-2c991.firebaseapp.com",
         projectId: "test-bank-ddies-2c991",
         storageBucket: "test-bank-ddies-2c991.firebasestorage.app",
         messagingSenderId: "965037848214",
