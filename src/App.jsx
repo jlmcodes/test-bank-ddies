@@ -189,6 +189,10 @@ export default function App() {
 
   const [modal, setModal] = useState(null);
 
+  const showAlert = (title, message) => {
+    setModal({ type: 'alert', title, message, onConfirm: () => setModal(null) });
+  };
+
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -199,6 +203,7 @@ export default function App() {
         }
       } catch (err) {
         console.error("Auth Error:", err);
+        showAlert("Database Connection Error", `Firebase Authentication failed. If you deployed this app, please ensure your domain (e.g., your-app.vercel.app) is added to the 'Authorized domains' list in your Firebase Console Authentication settings. Error: ${err.message}`);
       }
     };
     initAuth();
@@ -246,26 +251,30 @@ export default function App() {
     unsubscribes.push(unsubProg);
 
     const loadProfile = async () => {
-      const profileRef = doc(db, 'artifacts', appId, 'users', uid, 'profile', 'data');
-      const snap = await getDocs(collection(db, 'artifacts', appId, 'users', uid, 'profile'));
-      let profData = { streak: 0, lastActive: null };
-      if (!snap.empty) {
-        profData = snap.docs[0].data();
-      }
-      
-      const today = new Date().toISOString().split('T')[0];
-      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-
-      if (profData.lastActive !== today) {
-        if (profData.lastActive === yesterday) {
-          profData.streak += 1;
-        } else {
-          profData.streak = 1;
+      try {
+        const profileRef = doc(db, 'artifacts', appId, 'users', uid, 'profile', 'data');
+        const snap = await getDocs(collection(db, 'artifacts', appId, 'users', uid, 'profile'));
+        let profData = { streak: 0, lastActive: null };
+        if (!snap.empty) {
+          profData = snap.docs[0].data();
         }
-        profData.lastActive = today;
-        await setDoc(profileRef, profData, { merge: true });
+        
+        const today = new Date().toISOString().split('T')[0];
+        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+        if (profData.lastActive !== today) {
+          if (profData.lastActive === yesterday) {
+            profData.streak += 1;
+          } else {
+            profData.streak = 1;
+          }
+          profData.lastActive = today;
+          await setDoc(profileRef, profData, { merge: true });
+        }
+        setProfile(profData);
+      } catch (error) {
+        console.error("Profile load error:", error);
       }
-      setProfile(profData);
     };
     loadProfile();
 
@@ -274,12 +283,11 @@ export default function App() {
 
   const setProgressData = () => {}; 
 
-  const showAlert = (title, message) => {
-    setModal({ type: 'alert', title, message, onConfirm: () => setModal(null) });
-  };
-
   const handleCreateFolder = () => {
-    if (!user) return;
+    if (!user) {
+      showAlert("Not Connected", "The app is not connected to the database. Make sure your domain is authorized in Firebase Settings.");
+      return;
+    }
     setModal({
       type: 'folder',
       title: 'New Folder',
@@ -296,6 +304,10 @@ export default function App() {
   };
 
   const handleEditFolder = (folder) => {
+    if (!user) {
+      showAlert("Not Connected", "The app is not connected to the database.");
+      return;
+    }
     setModal({
       type: 'folder',
       title: 'Edit Folder',
@@ -314,7 +326,10 @@ export default function App() {
   };
 
   const handleCreateDeck = async (folderId, deckData) => {
-    if (!user) return;
+    if (!user) {
+      showAlert("Not Connected", "The app is not connected to the database.");
+      return;
+    }
     const id = `deck_${Date.now()}`;
     await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'decks', id), {
       ...deckData,
@@ -326,20 +341,31 @@ export default function App() {
 
   const saveProgress = async (deckId, newProgressMap) => {
     if (!user) return;
-    await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'progress', deckId), newProgressMap, { merge: true });
+    try {
+      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'progress', deckId), newProgressMap, { merge: true });
+    } catch(err) {
+      console.error(err);
+    }
   };
 
   const saveHistory = async (historyEntry) => {
     if (!user) return;
-    const id = `hist_${Date.now()}`;
-    await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'history', id), {
-      ...historyEntry,
-      createdAt: Date.now()
-    });
+    try {
+      const id = `hist_${Date.now()}`;
+      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'history', id), {
+        ...historyEntry,
+        createdAt: Date.now()
+      });
+    } catch(err) {
+      console.error(err);
+    }
   };
 
   const deleteItem = (col, id) => {
-    if (!user) return;
+    if (!user) {
+      showAlert("Not Connected", "The app is not connected to the database.");
+      return;
+    }
     setModal({
       type: 'confirm',
       title: 'Confirm Deletion',
@@ -366,8 +392,10 @@ export default function App() {
       if (error.code === 'auth/credential-already-in-use') {
          const provider = new GoogleAuthProvider();
          await signInWithPopup(auth, provider);
+      } else if (error.code === 'auth/unauthorized-domain') {
+         showAlert("Domain Unauthorized", "Your domain is not authorized in Firebase. Please add this domain to the Authorized Domains list in your Firebase Console (Authentication > Settings).");
       } else {
-         showAlert("Notice", "Google Sign-In might be restricted in this environment. Proceeding with automatic sync.");
+         showAlert("Notice", "Google Sign-In might be restricted in this environment. Error: " + error.message);
          console.error(error);
       }
     }
@@ -385,7 +413,7 @@ export default function App() {
         <div className="surface p-6 rounded-2xl max-w-sm w-full shadow-2xl">
           <h3 className="text-xl font-bold mb-2 text-[var(--pd-deep)] dark:text-white">{modal.title}</h3>
           
-          {modal.message && <p className="opacity-80 mb-6 text-[var(--pd-old)] dark:text-slate-300">{modal.message}</p>}
+          {modal.message && <p className="opacity-80 mb-6 text-[var(--pd-old)] dark:text-slate-300 whitespace-pre-wrap">{modal.message}</p>}
           
           {modal.type === 'prompt' && (
             <input 
@@ -538,13 +566,17 @@ export default function App() {
   };
 
   const Dashboard = () => {
-    const [currentTime, setCurrentTime] = useState(new Date());
+    const [currentTime, setCurrentTime] = useState(null);
+    
+    // Using a mounted state avoids Vercel/Next.js React Hydration errors
+    // when using Date() that differs between server and client.
     useEffect(() => {
+      setCurrentTime(new Date());
       const timer = setInterval(() => setCurrentTime(new Date()), 1000);
       return () => clearInterval(timer);
     }, []);
 
-    const hrs = currentTime.getHours();
+    const hrs = currentTime ? currentTime.getHours() : 12;
     let greeting = 'Good Evening';
     if (hrs < 12) greeting = 'Good Morning';
     else if (hrs < 18) greeting = 'Good Afternoon';
@@ -572,10 +604,12 @@ export default function App() {
                     <h2 className="text-3xl font-black text-[var(--pd-deep)] dark:text-white uppercase tracking-tight mb-2">
                        {greeting}, {firstName}!
                     </h2>
-                    <p className="text-[var(--pd-ripe)] dark:text-slate-300 font-semibold flex items-center gap-2">
-                       {currentTime.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                       <span className="font-black text-lg ml-2 bg-[var(--blue-soft)] px-3 py-1 rounded-lg text-[var(--coral-dark)]">{currentTime.toLocaleTimeString()}</span>
-                    </p>
+                    {currentTime && (
+                       <p className="text-[var(--pd-ripe)] dark:text-slate-300 font-semibold flex items-center gap-2">
+                         {currentTime.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                         <span className="font-black text-lg ml-2 bg-[var(--blue-soft)] px-3 py-1 rounded-lg text-[var(--coral-dark)]">{currentTime.toLocaleTimeString()}</span>
+                       </p>
+                    )}
                   </div>
 
                   <div className="flex gap-4 self-start md:self-auto">
@@ -667,7 +701,13 @@ export default function App() {
                </button>
             </div>
           </div>
-          <button onClick={() => { setActiveDeck(null); setView('import'); }} className="btn-primary flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm">
+          <button onClick={() => { 
+              if (!user) {
+                showAlert("Not Connected", "You cannot add a deck without a database connection.");
+                return;
+              }
+              setActiveDeck(null); setView('import'); 
+            }} className="btn-primary flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm">
             <Plus size={18} /> Add Deck
           </button>
         </div>
