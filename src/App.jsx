@@ -282,13 +282,17 @@ const Navbar = ({ setView, profile, isDark, setIsDark, user, googleSignIn }) => 
       </div>
     </div>
     <div className="flex items-center gap-4">
-      {user?.isAnonymous ? (
+      {/* FIXED LOGIC: Only show "Synced" if user exists AND is NOT anonymous */}
+      {user && !user.isAnonymous ? (
+         <span className="text-xs font-black uppercase tracking-wider text-[var(--pd-deep)] bg-[var(--blue)] px-3 py-1.5 rounded-lg hidden sm:block shadow-sm">
+           Synced
+         </span>
+      ) : (
          <button onClick={googleSignIn} className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-700 transition shadow-sm font-bold text-sm">
            <GoogleLogo /> <span className="hidden sm:inline">Sign in with Google</span>
          </button>
-      ) : (
-         <span className="text-xs font-black uppercase tracking-wider text-[var(--blue)] bg-[var(--blue-soft)] px-3 py-1.5 rounded-lg hidden sm:block">Synced</span>
       )}
+      
       <button onClick={() => setIsDark(!isDark)} className="p-2 rounded-full hover:bg-[var(--blue-soft)] transition-colors text-[var(--pd-old)] dark:text-slate-300">
         {isDark ? <Sun size={20} /> : <Moon size={20} />}
       </button>
