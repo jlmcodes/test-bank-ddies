@@ -14,12 +14,12 @@ import { getFirestore, collection, doc, getDocs, setDoc, deleteDoc, onSnapshot }
 const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config
   ? JSON.parse(__firebase_config)
   : {
-      apiKey: "AIzaSyCpWZ-gWDZQ4jATie2igPe51yK1aY37DEg",
-      authDomain: "test-bank-ddies-2c991.firebaseapp.com",
-      projectId: "test-bank-ddies-2c991",
-      storageBucket: "test-bank-ddies-2c991.firebasestorage.app",
-      messagingSenderId: "965037848214",
-      appId: "1:965037848214:web:010652f7d1d614cbd534b7"
+        apiKey: "AIzaSyCpwZ-gWDZQ4jATie2igPe51yK1aY37DEg",
+        authDomain: "test-bank-ddies.vercel.app",
+        projectId: "test-bank-ddies-2c991",
+        storageBucket: "test-bank-ddies-2c991.firebasestorage.app",
+        messagingSenderId: "965037848214",
+        appId: "1:965037848214:web:010652f7d1d614cbd534b7"
     };
 
 const app = initializeApp(firebaseConfig);
