@@ -6,22 +6,26 @@ import {
   FileText, Code, Save, TrendingUp, TrendingDown, Minus, Image as ImageIcon, X, Clock, Timer
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, linkWithPopup } from 'firebase/auth';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, linkWithPopup } from 'firebase/auth';
 import { getFirestore, collection, doc, getDocs, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
-// --- INITIALIZATION & CONFIGURATION ---
-const firebaseConfig = {
-  apiKey: "AIzaSyCpwZ-gWDZQ4jATie2igPe51yK1aY37DEg",
-  authDomain: "test-bank-ddies-2c991.firebaseapp.com",
-  projectId: "test-bank-ddies-2c991",
-  storageBucket: "test-bank-ddies-2c991.firebasestorage.app",
-  messagingSenderId: "965037848214",
-  appId: "1:965037848214:web:010652f7d1d614cbd534b7"
-};
+// --- PRODUCTION FIREBASE CONFIGURATION ---
+// Safely falls back to your Vercel keys when deployed outside this sandbox!
+const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config 
+  ? JSON.parse(__firebase_config) 
+  : {
+      apiKey: "AIzaSyCpWZ-gWDZQ4jATie2igPe51yK1aY37DEg",
+      authDomain: "test-bank-ddies-2c991.firebaseapp.com",
+      projectId: "test-bank-ddies-2c991",
+      storageBucket: "test-bank-ddies-2c991.firebasestorage.app",
+      messagingSenderId: "965037848214",
+      appId: "1:965037848214:web:010652f7d1d614cbd534b7"
+    };
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'test-bank-ddies-default';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'test-bank-ddies-production';
 
 // Color Palette (Sunrise Glow)
 const palette = {
@@ -942,7 +946,7 @@ const DeckEditor = ({ pendingDeck, setPendingDeck, activeFolder, user, setActive
                  <div key={oIdx} className="flex items-center gap-4">
                    <div 
                      title="Mark as correct answer"
-                     className={`p-2.5 rounded-full cursor-pointer transition-all ${q.a === oIdx ? 'bg-green-100 text-green-600 dark:bg-green-900/60 dark:text-green-400 shadow-sm scale-110' : 'bg-[#F9DAD8] text-[var(--pd-muted)] dark:bg-slate-800 dark:text-slate-600 hover:bg-[var(--blue-soft)] hover:text-[var(--coral)]'}`}
+                     className={`p-2.5 rounded-full cursor-pointer transition-all ${q.a === oIdx ? 'bg-green-100 text-green-600 dark:bg-green-900/60 dark:text-green-400 shadow-sm scale-110' : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600 hover:bg-[var(--blue-soft)] hover:text-[var(--coral)]'}`}
                      onClick={() => setCorrectOpt(qIdx, oIdx)}
                    >
                      <CheckCircle size={22} className={q.a === oIdx ? 'opacity-100' : 'opacity-50'} />
@@ -1181,13 +1185,11 @@ const QuizRunner = ({ activeQuiz, setActiveQuiz, activeDeck, progress, saveProgr
 
   const submitQuizRef = useRef(null);
 
-  // Reset Question Timer on Next Question if mode is "per question"
   useEffect(() => {
      setQElapsed(0);
      setQRemaining(timeMode === 'timer' ? timeLimit * 60 : 0);
   }, [currentIndex, timeMode, timeLimit]);
 
-  // Dual Timer Engine
   useEffect(() => {
     if (timeMode === 'none' || activeQuiz.completed) return;
     const timerId = setInterval(() => {
@@ -1207,12 +1209,11 @@ const QuizRunner = ({ activeQuiz, setActiveQuiz, activeDeck, progress, saveProgr
      setActiveQuiz(prev => ({
        ...prev,
        wrongAnswers: [...prev.wrongAnswers, q],
-       selectedOpt: -1, // Indicates timeout
+       selectedOpt: -1, 
        isAnswered: true
      }));
   };
 
-  // Handle Auto-Submits and Timeouts
   useEffect(() => {
      if (timeMode === 'timer' && !activeQuiz.completed && !isAnswered) {
         if (timeScope === 'quiz' && quizRemaining === 0) {
@@ -1676,8 +1677,8 @@ export default function App() {
   const googleSignIn = async () => {
     try {
       const provider = new GoogleAuthProvider();
-      if (user && user.isAnonymous) {
-         await linkWithPopup(user, provider);
+      if (auth.currentUser && auth.currentUser.isAnonymous) {
+         await linkWithPopup(auth.currentUser, provider);
       } else {
          await signInWithPopup(auth, provider);
       }
