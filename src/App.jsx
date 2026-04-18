@@ -723,7 +723,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Replaced Cherry Blossom tree with Todo List */}
           <div className="xl:col-span-1 flex flex-col gap-8">
             <TodoList />
           </div>
