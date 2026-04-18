@@ -13,12 +13,12 @@ import { getFirestore, collection, doc, getDocs, setDoc, deleteDoc, onSnapshot }
 const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config
   ? JSON.parse(__firebase_config)
   : {
-        apiKey: "AIzaSyCpwZ-gWDZQ4jATie2igPe51yK1aY37DEg",
-        authDomain: "test-bank-ddies-2c991.firebaseapp.com",
-        projectId: "test-bank-ddies-2c991",
-        storageBucket: "test-bank-ddies-2c991.firebasestorage.app",
-        messagingSenderId: "965037848214",
-        appId: "1:965037848214:web:010652f7d1d614cbd534b7"
+      apiKey: "AIzaSyCpwZ-gWDZQ4jATie2igPe51yK1aY37DEg",
+      authDomain: "test-bank-ddies-2c991.firebaseapp.com",
+      projectId: "test-bank-ddies-2c991",
+      storageBucket: "test-bank-ddies-2c991.firebasestorage.app",
+      messagingSenderId: "965037848214",
+      appId: "1:965037848214:web:010652f7d1d614cbd534b7"
     };
 
 const app = initializeApp(firebaseConfig);
@@ -179,6 +179,7 @@ export default function App() {
   const [todos, setTodos] = useState([]);
   const [progress, setProgress] = useState({}); 
   const [history, setHistory] = useState([]);
+  const [customPhoto, setCustomPhoto] = useState(null);
 
   const [activeFolder, setActiveFolder] = useState(null);
   const [activeDeck, setActiveDeck] = useState(null);
@@ -243,6 +244,7 @@ export default function App() {
 
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
+      if (!u) setCustomPhoto(null);
     });
     return () => unsubscribe();
   }, []);
@@ -289,6 +291,21 @@ export default function App() {
     }, err => console.error(err));
     unsubscribes.push(unsubProg);
 
+    const loadProfile = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'artifacts', appId, 'users', uid, 'profile'));
+        if (!snap.empty) {
+          const profData = snap.docs[0].data();
+          if (profData.photoURL) {
+            setCustomPhoto(profData.photoURL);
+          }
+        }
+      } catch(e) {
+        console.error("Profile load error", e);
+      }
+    };
+    loadProfile();
+
     return () => unsubscribes.forEach(u => u());
   }, [user]);
 
@@ -315,6 +332,20 @@ export default function App() {
     await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'todos', id));
   };
 
+  // --- PROFILE UPLOAD ---
+  const handleProfileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!user) return showAlert("Not Connected", "Must be logged in to save a profile picture.");
+    try {
+      const base64 = await resizeImage(file, 400); // Efficient avatar size
+      setCustomPhoto(base64);
+      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'profile', 'data'), { photoURL: base64 }, { merge: true });
+    } catch (err) {
+       console.error("Image Error", err);
+       showAlert("Image Error", "Could not process this image.");
+    }
+  };
 
   const handleCreateFolder = () => {
     if (!user) {
@@ -584,18 +615,18 @@ export default function App() {
           <CheckCircle size={22} className="text-[var(--coral)]" /> Tasks
         </h2>
         
-        <div className="flex items-center gap-3 mb-5">
+        <div className="flex gap-2 mb-5 h-11 items-stretch">
           <input
             type="text"
             value={newTodo}
             onChange={e => setNewTodo(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && (handleAddTodo(newTodo), setNewTodo(''))}
-            className="flex-1 h-12 px-4 rounded-xl border-2 border-[var(--blue-soft)] bg-transparent text-sm focus:outline-none focus:border-[var(--coral)] font-semibold text-[var(--pd-ripe)] dark:text-slate-200 transition-colors"
+            className="flex-1 h-full px-4 rounded-xl border-2 border-[var(--blue-soft)] bg-transparent text-sm focus:outline-none focus:border-[var(--coral)] font-semibold text-[var(--pd-ripe)] dark:text-slate-200 transition-colors"
             placeholder="Add a new task..."
           />
           <button 
             onClick={() => { handleAddTodo(newTodo); setNewTodo(''); }} 
-            className="h-12 w-12 shrink-0 flex items-center justify-center bg-[var(--coral)] text-white rounded-xl shadow-sm hover:bg-[#E86A58] transition-colors"
+            className="aspect-square h-full shrink-0 flex items-center justify-center bg-[var(--coral)] text-white rounded-xl shadow-sm hover:bg-[#E86A58] transition-colors"
           >
             <Plus size={22} />
           </button>
@@ -652,12 +683,16 @@ export default function App() {
     // Smart display name extraction
     let firstName = 'Student';
     if (user && !user.isAnonymous) {
-       // Search provider data if main displayName is occasionally null during linking
        const providerName = user.displayName || user.providerData?.[0]?.displayName;
        if (providerName) {
           firstName = providerName.split(' ')[0];
        }
     }
+
+    // Determine Profile Picture Logic
+    const defaultAvatarUrl = `https://api.dicebear.com/7.x/notionists/svg?seed=${user?.uid || 'guest'}&backgroundColor=FF9A8B`;
+    const googlePhotoUrl = user && !user.isAnonymous ? user.photoURL : null;
+    const profileImageUrl = customPhoto || googlePhotoUrl || defaultAvatarUrl;
 
     let masteredCount = 0;
     let totalQs = 0;
@@ -676,16 +711,31 @@ export default function App() {
           <div className="xl:col-span-3 flex flex-col gap-8">
             <div className="surface p-8 rounded-3xl shadow-xl border-l-8 border-l-[var(--coral)] relative overflow-hidden">
                <div className="relative z-10 flex flex-col md:flex-row justify-between md:items-end gap-6">
-                  <div>
-                    <h2 className="text-3xl font-black text-[var(--pd-deep)] dark:text-white uppercase tracking-tight mb-2">
-                       {greeting}, {firstName}!
-                    </h2>
-                    {currentTime && (
-                       <p className="text-[var(--pd-ripe)] dark:text-slate-300 font-semibold flex items-center gap-2">
-                         {currentTime.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                         <span className="font-black text-lg ml-2 bg-[var(--blue-soft)] px-3 py-1 rounded-lg text-[var(--coral-dark)]">{currentTime.toLocaleTimeString()}</span>
-                       </p>
-                    )}
+                  
+                  <div className="flex items-center gap-5">
+                    <label className="relative group cursor-pointer block shrink-0" title="Click to change profile picture">
+                      <img 
+                        src={profileImageUrl} 
+                        alt="Profile" 
+                        className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-4 border-white dark:border-[var(--card-dark)] shadow-md transition-transform group-hover:scale-105 bg-white"
+                      />
+                      <div className="absolute inset-0 bg-black/40 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all">
+                        <Upload size={20} className="text-white" />
+                      </div>
+                      <input type="file" accept="image/*" className="hidden" onChange={handleProfileUpload} />
+                    </label>
+                    
+                    <div>
+                      <h2 className="text-3xl font-black text-[var(--pd-deep)] dark:text-white uppercase tracking-tight mb-2 leading-none">
+                         {greeting},<br className="hidden md:block"/> {firstName}!
+                      </h2>
+                      {currentTime && (
+                         <p className="text-[var(--pd-ripe)] dark:text-slate-300 font-semibold flex items-center gap-2 mt-2">
+                           {currentTime.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                           <span className="font-black text-sm sm:text-lg ml-2 bg-[var(--blue-soft)] px-3 py-1 rounded-lg text-[var(--coral-dark)]">{currentTime.toLocaleTimeString()}</span>
+                         </p>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex gap-4 self-start md:self-auto">
