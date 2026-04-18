@@ -3,22 +3,22 @@ import {
   Folder, BookOpen, Upload, Play, Settings, Moon, Sun, 
   CheckCircle, XCircle, RotateCcw, Trophy, ChevronRight, 
   Plus, Trash2, Edit3, ArrowLeft, BarChart2, Check, AlertCircle, 
-  FileText, Code, Save, TrendingUp, TrendingDown, Minus, Image as ImageIcon, X, Clock, Timer
+  FileText, Code, Save, TrendingUp, TrendingDown, Minus, Image as ImageIcon, X, Clock, Timer, LogOut
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, linkWithPopup } from 'firebase/auth';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, linkWithPopup, signOut } from 'firebase/auth';
 import { getFirestore, collection, doc, getDocs, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
 // --- PRODUCTION FIREBASE CONFIGURATION ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config
   ? JSON.parse(__firebase_config)
   : {
-        apiKey: "AIzaSyCpwZ-gWDZQ4jATie2igPe51yK1aY37DEg",
-        authDomain: "test-bank-ddies-2c991.firebaseapp.com",
-        projectId: "test-bank-ddies-2c991",
-        storageBucket: "test-bank-ddies-2c991.firebasestorage.app",
-        messagingSenderId: "965037848214",
-        appId: "1:965037848214:web:010652f7d1d614cbd534b7"
+      apiKey: "AIzaSyCpWZ-gWDZQ4jATie2igPe51yK1aY37DEg",
+      authDomain: "test-bank-ddies-2c991.firebaseapp.com",
+      projectId: "test-bank-ddies-2c991",
+      storageBucket: "test-bank-ddies-2c991.firebasestorage.app",
+      messagingSenderId: "965037848214",
+      appId: "1:965037848214:web:010652f7d1d614cbd534b7"
     };
 
 const app = initializeApp(firebaseConfig);
@@ -425,6 +425,23 @@ export default function App() {
     }
   };
 
+  const handleLogout = () => {
+    setModal({
+      type: 'confirm',
+      title: 'Sign Out',
+      message: 'Are you sure you want to sign out? Your data is safely synced to your Google account.',
+      onConfirm: async () => {
+        try {
+          await signOut(auth);
+          window.location.reload(); // Refresh securely logs out and initiates fresh anonymous session
+        } catch (error) {
+          console.error("Logout Error:", error);
+        }
+      },
+      onCancel: () => setModal(null)
+    });
+  };
+
   // --- INTERNAL UI COMPONENTS ---
 
   const Modal = () => {
@@ -537,7 +554,6 @@ export default function App() {
         </div>
       </div>
       <div className="flex items-center gap-4">
-        {/* Fixed UI Bug: Properly check if user exists before checking isAnonymous */}
         {!user ? (
            <span className="text-xs font-black uppercase tracking-wider text-slate-500 bg-slate-200 dark:bg-slate-800 px-3 py-1.5 rounded-lg hidden sm:block animate-pulse">Connecting...</span>
         ) : user.isAnonymous ? (
@@ -545,7 +561,12 @@ export default function App() {
              <GoogleLogo /> <span className="hidden sm:inline">Sign in with Google</span>
            </button>
         ) : (
-           <span className="text-xs font-black uppercase tracking-wider text-[var(--blue)] bg-[var(--blue-soft)] px-3 py-1.5 rounded-lg hidden sm:block shadow-sm">Synced</span>
+           <div className="flex items-center gap-2">
+             <span className="text-xs font-black uppercase tracking-wider text-[var(--blue)] bg-[var(--blue-soft)] px-3 py-1.5 rounded-lg hidden sm:block shadow-sm">Synced</span>
+             <button onClick={handleLogout} className="p-2 rounded-full hover:bg-red-50 dark:hover:bg-red-900/30 text-red-400 hover:text-red-500 transition-colors shadow-sm" title="Sign Out">
+               <LogOut size={18} />
+             </button>
+           </div>
         )}
         <button onClick={() => setIsDark(!isDark)} className="p-2 rounded-full hover:bg-[var(--blue-soft)] transition-colors text-[var(--pd-old)] dark:text-slate-300">
           {isDark ? <Sun size={20} /> : <Moon size={20} />}
@@ -563,20 +584,20 @@ export default function App() {
           <CheckCircle size={22} className="text-[var(--coral)]" /> Tasks
         </h2>
         
-        <div className="flex gap-2 mb-5">
+        <div className="flex items-center gap-3 mb-5">
           <input
             type="text"
             value={newTodo}
             onChange={e => setNewTodo(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && (handleAddTodo(newTodo), setNewTodo(''))}
-            className="flex-1 p-3 rounded-xl border-2 border-[var(--blue-soft)] bg-transparent text-sm focus:outline-none focus:border-[var(--coral)] font-semibold text-[var(--pd-ripe)] dark:text-slate-200"
+            className="flex-1 h-12 px-4 rounded-xl border-2 border-[var(--blue-soft)] bg-transparent text-sm focus:outline-none focus:border-[var(--coral)] font-semibold text-[var(--pd-ripe)] dark:text-slate-200 transition-colors"
             placeholder="Add a new task..."
           />
           <button 
             onClick={() => { handleAddTodo(newTodo); setNewTodo(''); }} 
-            className="bg-[var(--coral)] text-white px-4 rounded-xl shadow-sm hover:bg-[#E86A58] transition-colors"
+            className="h-12 w-12 shrink-0 flex items-center justify-center bg-[var(--coral)] text-white rounded-xl shadow-sm hover:bg-[#E86A58] transition-colors"
           >
-            <Plus size={20} />
+            <Plus size={22} />
           </button>
         </div>
 
@@ -628,7 +649,15 @@ export default function App() {
     if (hrs < 12) greeting = 'Good Morning';
     else if (hrs < 18) greeting = 'Good Afternoon';
 
-    const firstName = user?.displayName ? user.displayName.split(' ')[0] : 'Student';
+    // Smart display name extraction
+    let firstName = 'Student';
+    if (user && !user.isAnonymous) {
+       // Search provider data if main displayName is occasionally null during linking
+       const providerName = user.displayName || user.providerData?.[0]?.displayName;
+       if (providerName) {
+          firstName = providerName.split(' ')[0];
+       }
+    }
 
     let masteredCount = 0;
     let totalQs = 0;
