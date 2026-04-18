@@ -380,26 +380,44 @@ export default function App() {
     });
   };
 
-  const googleSignIn = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
+import { signInWithRedirect, getRedirectResult } from 'firebase/auth'; // Update your imports at the top
+
+// Inside your App component:
+const googleSignIn = async () => {
+  try {
+    const provider = new GoogleAuthProvider();
+    
+    // Check if the user is using Safari
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
+    if (isSafari) {
+      // Safari prefers redirects
+      await signInWithRedirect(auth, provider);
+    } else {
+      // Other browsers handle popups fine
       if (auth.currentUser && auth.currentUser.isAnonymous) {
          await linkWithPopup(auth.currentUser, provider);
       } else {
          await signInWithPopup(auth, provider);
       }
-    } catch (error) {
-      if (error.code === 'auth/credential-already-in-use') {
-         const provider = new GoogleAuthProvider();
-         await signInWithPopup(auth, provider);
-      } else if (error.code === 'auth/unauthorized-domain') {
-         showAlert("Domain Unauthorized", "Your domain is not authorized in Firebase. Please add this domain to the Authorized Domains list in your Firebase Console (Authentication > Settings).");
-      } else {
-         showAlert("Notice", "Google Sign-In might be restricted in this environment. Error: " + error.message);
-         console.error(error);
-      }
     }
-  };
+  } catch (error) {
+    showAlert("Notice", "Sign-In error: " + error.message);
+    console.error(error);
+  }
+};
+
+// You'll also want to add this right after your initAuth() inside the first useEffect
+// to catch the user returning from the Safari redirect:
+useEffect(() => {
+  getRedirectResult(auth).then((result) => {
+    if (result && result.user) {
+      setUser(result.user);
+    }
+  }).catch((error) => {
+    console.error("Redirect Error:", error);
+  });
+}, []);
 
   // --- INTERNAL UI COMPONENTS ---
 
