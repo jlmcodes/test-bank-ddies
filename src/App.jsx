@@ -464,7 +464,7 @@ export default function App() {
       onConfirm: async () => {
         try {
           await signOut(auth);
-          window.location.reload(); // Refresh securely logs out and initiates fresh anonymous session
+          window.location.reload(); 
         } catch (error) {
           console.error("Logout Error:", error);
         }
@@ -615,20 +615,21 @@ export default function App() {
           <CheckCircle size={22} className="text-[var(--coral)]" /> Tasks
         </h2>
         
-        <div className="relative mb-5 flex items-center">
+        {/* Adjusted to perfectly embed the button within the input bar */}
+        <div className="relative mb-5 w-full">
           <input
             type="text"
             value={newTodo}
             onChange={e => setNewTodo(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && (handleAddTodo(newTodo), setNewTodo(''))}
-            className="w-full h-11 pl-4 pr-12 rounded-xl border-2 border-[var(--blue-soft)] bg-transparent text-sm focus:outline-none focus:border-[var(--coral)] font-semibold text-[var(--pd-ripe)] dark:text-slate-200 transition-colors"
+            className="w-full h-12 pl-4 pr-14 rounded-xl border-2 border-[var(--blue-soft)] bg-transparent text-sm focus:outline-none focus:border-[var(--coral)] font-semibold text-[var(--pd-ripe)] dark:text-slate-200 transition-colors"
             placeholder="Add a new task..."
           />
           <button 
             onClick={() => { handleAddTodo(newTodo); setNewTodo(''); }} 
-            className="absolute right-1.5 w-8 h-8 flex items-center justify-center bg-[var(--coral)] text-white rounded-lg shadow-sm hover:bg-[#E86A58] transition-colors"
+            className="absolute right-1.5 top-1.5 bottom-1.5 w-9 flex items-center justify-center bg-[var(--coral)] text-white rounded-lg shadow-sm hover:bg-[#E86A58] transition-colors"
           >
-            <Plus size={18} />
+            <Plus size={18} strokeWidth={3} />
           </button>
         </div>
 
@@ -903,7 +904,7 @@ export default function App() {
           }
 
           parsedQuestions = JSON.parse(jsonStr);
-          if (!Array.isArray(parsedQuestions) || parsedQuestions.length === 0 || (!parsedQuestions[0].q && !parsedQuestions[0].question)) {
+          if (!Array.isArray(parsedQuestions) || parsedQuestions.length === 0 || (!parsedQuestions[0].q && !parsedQuestions[0].question && !parsedQuestions[0].text)) {
              throw new Error("Invalid format");
           }
         } else {
@@ -966,15 +967,49 @@ export default function App() {
            }
         }
 
-        const finalQs = parsedQuestions.map((q, idx) => ({
-          id: q.id || `q_${Date.now()}_${idx}`,
-          q: q.q || q.question,
-          options: q.options || q.o || [],
-          a: q.a !== undefined ? q.a : (q.answerIndex || 0),
-          scenarioText: q.scenarioText || '',
-          scenarioImage: q.scenarioImage || null,
-          linkedToPrevious: q.linkedToPrevious || false
-        }));
+        const finalQs = parsedQuestions.map((q, idx) => {
+          let aIndex = 0;
+          let options = q.options || q.o || q.choices || [];
+          
+          // Smart Answer String Detection 
+          if (q.answer !== undefined) {
+            if (typeof q.answer === 'number') {
+              aIndex = q.answer;
+            } else if (typeof q.answer === 'string') {
+              // Exact string match
+              const matchIdx = options.findIndex(opt => opt.trim().toLowerCase() === q.answer.trim().toLowerCase());
+              if (matchIdx !== -1) {
+                aIndex = matchIdx;
+              } else {
+                // Check if it's "A" or "A. Something"
+                const letterMatch = q.answer.trim().match(/^([a-eA-E])/);
+                if (letterMatch) {
+                  aIndex = letterMatch[1].toUpperCase().charCodeAt(0) - 65; // A->0, B->1
+                }
+              }
+            }
+          } else if (q.a !== undefined) {
+            aIndex = parseInt(q.a) || 0;
+          } else if (q.answerIndex !== undefined) {
+            aIndex = parseInt(q.answerIndex) || 0;
+          }
+
+          // Safety Bounds
+          if (aIndex < 0 || aIndex >= Math.max(options.length, 1)) {
+            aIndex = 0;
+          }
+
+          return {
+            id: q.id || `q_${Date.now()}_${idx}`,
+            q: q.q || q.question || q.text || "Untitled Question",
+            options: options,
+            a: aIndex,
+            explanation: q.explanation || q.exp || q.reason || '',
+            scenarioText: q.scenarioText || '',
+            scenarioImage: q.scenarioImage || null,
+            linkedToPrevious: q.linkedToPrevious || false
+          }
+        });
 
         setPendingDeck({ name: "Untitled Deck", label: "Quiz", questions: finalQs });
         setView('edit_deck');
@@ -1057,7 +1092,7 @@ export default function App() {
               <textarea 
                 className="w-full h-56 p-5 rounded-2xl border-2 border-[var(--blue-soft)] bg-black/5 dark:bg-white/5 focus:outline-none focus:border-[var(--coral)] font-mono text-sm shadow-inner text-[var(--pd-ripe)] dark:text-slate-200 transition-colors"
                 value={inputData} onChange={e => setInputData(e.target.value)}
-                placeholder='[{"q": "What is 2+2?", "o": ["3", "4", "5"], "a": 1}]'
+                placeholder='[{"q": "What is 2+2?", "options": ["3", "4", "5"], "answer": "4", "explanation": "2 + 2 equals 4"}]'
               ></textarea>
             </div>
           ) : (
@@ -1112,6 +1147,7 @@ export default function App() {
         return { 
           ...q, 
           a: safeA,
+          explanation: q.explanation || '',
           scenarioText: q.scenarioText || '',
           scenarioImage: q.scenarioImage || null,
           linkedToPrevious: q.linkedToPrevious || false
@@ -1138,6 +1174,12 @@ export default function App() {
     const updateQText = (idx, value) => {
       const updated = [...qs];
       updated[idx].q = value;
+      setQs(updated);
+    };
+
+    const updateExplanation = (idx, value) => {
+      const updated = [...qs];
+      updated[idx].explanation = value;
       setQs(updated);
     };
 
@@ -1194,7 +1236,7 @@ export default function App() {
     };
 
     const addQuestion = () => {
-      setQs([...qs, { id: `q_${Date.now()}_new`, q: "New Question", options: ["Option 1", "Option 2"], a: 0, scenarioText: '', scenarioImage: null, linkedToPrevious: false }]);
+      setQs([...qs, { id: `q_${Date.now()}_new`, q: "New Question", options: ["Option 1", "Option 2"], a: 0, explanation: '', scenarioText: '', scenarioImage: null, linkedToPrevious: false }]);
     };
 
     const removeQuestion = (idx) => {
@@ -1335,9 +1377,19 @@ export default function App() {
                  ))}
                </div>
 
-               <button onClick={() => addOpt(qIdx)} className="mt-6 text-sm font-black uppercase tracking-wider text-[var(--coral)] hover:text-[var(--peach)] flex items-center gap-1.5 transition-colors">
+               <button onClick={() => addOpt(qIdx)} className="mt-4 text-sm font-black uppercase tracking-wider text-[var(--coral)] hover:text-[var(--peach)] flex items-center gap-1.5 transition-colors">
                  <Plus size={18}/> Add Choice
                </button>
+
+               <div className="mt-6 p-4 rounded-xl bg-black/5 dark:bg-white/5 border-2 border-transparent focus-within:border-[var(--blue-soft)] transition-colors">
+                  <label className="block text-[10px] font-black uppercase tracking-wider mb-2 text-[var(--pd-muted)]">Explanation (Optional)</label>
+                  <textarea 
+                    className="w-full p-3 rounded-lg border-2 border-transparent bg-white dark:bg-[#1A1C23] focus:outline-none focus:border-[var(--coral)] text-sm font-medium text-[var(--pd-ripe)] dark:text-slate-200 transition-colors shadow-sm min-h-[60px]"
+                    value={q.explanation || ''}
+                    onChange={(e) => updateExplanation(qIdx, e.target.value)}
+                    placeholder="Why is this the correct answer?"
+                  />
+               </div>
              </div>
            ))}
          </div>
@@ -1770,6 +1822,18 @@ export default function App() {
               );
             })}
          </div>
+
+         {/* Display Explanation when answered */}
+         {isAnswered && q.explanation && (
+           <div className="mt-6 p-6 rounded-2xl bg-[var(--blue-soft)]/20 border-l-4 border-[var(--blue)] text-left animate-fade-in shadow-sm">
+             <h4 className="text-sm font-black uppercase tracking-widest text-[var(--pd-deep)] dark:text-white mb-2 flex items-center gap-2">
+               <BookOpen size={16} className="text-[var(--blue)]" /> Explanation
+             </h4>
+             <p className="text-sm font-medium text-[var(--pd-ripe)] dark:text-slate-200 leading-relaxed whitespace-pre-wrap">
+               {q.explanation}
+             </p>
+           </div>
+         )}
 
          <div className="mt-10 h-20">
             {isAnswered && (
