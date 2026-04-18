@@ -615,20 +615,20 @@ export default function App() {
           <CheckCircle size={22} className="text-[var(--coral)]" /> Tasks
         </h2>
         
-        <div className="flex gap-2 mb-5 h-11 items-stretch">
+        <div className="relative mb-5 flex items-center">
           <input
             type="text"
             value={newTodo}
             onChange={e => setNewTodo(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && (handleAddTodo(newTodo), setNewTodo(''))}
-            className="flex-1 h-full px-4 rounded-xl border-2 border-[var(--blue-soft)] bg-transparent text-sm focus:outline-none focus:border-[var(--coral)] font-semibold text-[var(--pd-ripe)] dark:text-slate-200 transition-colors"
+            className="w-full h-11 pl-4 pr-12 rounded-xl border-2 border-[var(--blue-soft)] bg-transparent text-sm focus:outline-none focus:border-[var(--coral)] font-semibold text-[var(--pd-ripe)] dark:text-slate-200 transition-colors"
             placeholder="Add a new task..."
           />
           <button 
             onClick={() => { handleAddTodo(newTodo); setNewTodo(''); }} 
-            className="aspect-square h-full shrink-0 flex items-center justify-center bg-[var(--coral)] text-white rounded-xl shadow-sm hover:bg-[#E86A58] transition-colors"
+            className="absolute right-1.5 w-8 h-8 flex items-center justify-center bg-[var(--coral)] text-white rounded-lg shadow-sm hover:bg-[#E86A58] transition-colors"
           >
-            <Plus size={22} />
+            <Plus size={18} />
           </button>
         </div>
 
