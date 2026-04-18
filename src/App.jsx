@@ -6,7 +6,7 @@ import {
   FileText, Code, Save, TrendingUp, TrendingDown, Minus, Image as ImageIcon, X, Clock, Timer
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, linkWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, linkWithPopup } from 'firebase/auth';
 import { getFirestore, collection, doc, getDocs, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
 // --- PRODUCTION FIREBASE CONFIGURATION ---
@@ -215,16 +215,14 @@ export default function App() {
     link.href = `data:image/svg+xml,${svgIcon}`;
   }, []);
 
-  // --- AUTHENTICATION (FIXED REFRESH BUG) ---
+  // --- AUTHENTICATION ---
   useEffect(() => {
     const initAuth = async () => {
       try {
-        // Wait to see if Firebase finds a saved Google/Anonymous session from IndexedDB
         if (auth.authStateReady) {
             await auth.authStateReady(); 
         }
         
-        // If a user exists (session restored), skip creating a new one!
         if (auth.currentUser) return;
 
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -234,16 +232,14 @@ export default function App() {
         }
       } catch (err) {
         console.error("Auth Error:", err);
+        if (err.code === 'auth/operation-not-allowed') {
+           showAlert("Setup Required", "Anonymous sign-in is disabled. Please go to your Firebase Console > Authentication > Sign-in method, and enable 'Anonymous'.");
+        } else {
+           showAlert("Connection Error", err.message);
+        }
       }
     };
     initAuth();
-
-    // Catch Safari redirect login responses
-    getRedirectResult(auth).then((result) => {
-      if (result && result.user) {
-        setUser(result.user);
-      }
-    }).catch(console.error);
 
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
@@ -411,17 +407,10 @@ export default function App() {
   const googleSignIn = async () => {
     try {
       const provider = new GoogleAuthProvider();
-      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-
-      if (isSafari) {
-         // Fixes Safari cross-site tracking block
-         await signInWithRedirect(auth, provider);
+      if (auth.currentUser && auth.currentUser.isAnonymous) {
+         await linkWithPopup(auth.currentUser, provider);
       } else {
-         if (auth.currentUser && auth.currentUser.isAnonymous) {
-            await linkWithPopup(auth.currentUser, provider);
-         } else {
-            await signInWithPopup(auth, provider);
-         }
+         await signInWithPopup(auth, provider);
       }
     } catch (error) {
       if (error.code === 'auth/credential-already-in-use') {
@@ -548,12 +537,15 @@ export default function App() {
         </div>
       </div>
       <div className="flex items-center gap-4">
-        {user?.isAnonymous ? (
-           <button onClick={googleSignIn} className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-white hover:bg-slate-50 dark:hover:bg-slate-700 transition shadow-sm font-bold text-sm">
+        {/* Fixed UI Bug: Properly check if user exists before checking isAnonymous */}
+        {!user ? (
+           <span className="text-xs font-black uppercase tracking-wider text-slate-500 bg-slate-200 dark:bg-slate-800 px-3 py-1.5 rounded-lg hidden sm:block animate-pulse">Connecting...</span>
+        ) : user.isAnonymous ? (
+           <button onClick={googleSignIn} className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--blue-soft)] bg-white dark:bg-slate-800 text-[var(--pd-deep)] dark:text-white hover:bg-[var(--blue-soft)] transition shadow-sm font-bold text-sm">
              <GoogleLogo /> <span className="hidden sm:inline">Sign in with Google</span>
            </button>
         ) : (
-           <span className="text-xs font-black uppercase tracking-wider text-[var(--blue)] bg-[var(--blue-soft)] px-3 py-1.5 rounded-lg hidden sm:block">Synced</span>
+           <span className="text-xs font-black uppercase tracking-wider text-[var(--blue)] bg-[var(--blue-soft)] px-3 py-1.5 rounded-lg hidden sm:block shadow-sm">Synced</span>
         )}
         <button onClick={() => setIsDark(!isDark)} className="p-2 rounded-full hover:bg-[var(--blue-soft)] transition-colors text-[var(--pd-old)] dark:text-slate-300">
           {isDark ? <Sun size={20} /> : <Moon size={20} />}
