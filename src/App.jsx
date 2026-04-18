@@ -426,6 +426,13 @@ export default function App() {
       title: 'Confirm Deletion',
       message: `Are you sure you want to delete this? This action cannot be undone.`,
       onConfirm: async () => {
+        // Deep deletion: If deleting a folder, also delete all decks inside it to prevent ghost stats
+        if (col === 'folders') {
+          const relatedDecks = decks.filter(d => d.folderId === id);
+          for (let deck of relatedDecks) {
+            await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'decks', deck.id));
+          }
+        }
         await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, col, id));
         if (col === 'folders') setView('dashboard');
         if (col === 'decks') setView('folder');
@@ -695,12 +702,15 @@ export default function App() {
     const googlePhotoUrl = user && !user.isAnonymous ? user.photoURL : null;
     const profileImageUrl = customPhoto || googlePhotoUrl || defaultAvatarUrl;
 
+    // Filter to only count decks that belong to an existing folder
+    const validDecks = decks.filter(d => folders.some(f => f.id === d.folderId));
+
     let masteredCount = 0;
     let totalQs = 0;
-    decks.forEach(d => {
-       totalQs += d.questions.length;
+    validDecks.forEach(d => {
+       totalQs += d.questions?.length || 0;
        const dProg = progress[d.id] || {};
-       d.questions.forEach(q => {
+       (d.questions || []).forEach(q => {
           if (dProg[q.id] === 'mastered') masteredCount++;
        });
     });
@@ -749,7 +759,7 @@ export default function App() {
                         <div className="text-[10px] font-black uppercase tracking-widest text-[var(--pd-deep)] dark:text-slate-300 mt-1">Total Qs</div>
                      </div>
                      <div className="bg-[var(--blue-soft)]/40 p-4 rounded-2xl text-center min-w-[80px]">
-                        <div className="text-2xl font-black text-[var(--coral)]">{decks.length}</div>
+                        <div className="text-2xl font-black text-[var(--coral)]">{validDecks.length}</div>
                         <div className="text-[10px] font-black uppercase tracking-widest text-[var(--pd-deep)] dark:text-slate-300 mt-1">Decks</div>
                      </div>
                   </div>
