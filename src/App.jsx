@@ -6,20 +6,19 @@ import {
   FileText, Code, Save, TrendingUp, TrendingDown, Minus, Image as ImageIcon, X, Clock, Timer
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, linkWithPopup } from 'firebase/auth';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, linkWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import { getFirestore, collection, doc, getDocs, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
 // --- PRODUCTION FIREBASE CONFIGURATION ---
-// Safely falls back to your Vercel keys when deployed outside this sandbox!
 const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config
   ? JSON.parse(__firebase_config)
   : {
-        apiKey: "AIzaSyCpwZ-gWDZQ4jATie2igPe51yK1aY37DEg",
-        authDomain: "test-bank-ddies-2c991.firebaseapp.com",
-        projectId: "test-bank-ddies-2c991",
-        storageBucket: "test-bank-ddies-2c991.firebasestorage.app",
-        messagingSenderId: "965037848214",
-        appId: "1:965037848214:web:010652f7d1d614cbd534b7"
+      apiKey: "AIzaSyCpWZ-gWDZQ4jATie2igPe51yK1aY37DEg",
+      authDomain: "test-bank-ddies-2c991.firebaseapp.com",
+      projectId: "test-bank-ddies-2c991",
+      storageBucket: "test-bank-ddies-2c991.firebasestorage.app",
+      messagingSenderId: "965037848214",
+      appId: "1:965037848214:web:010652f7d1d614cbd534b7"
     };
 
 const app = initializeApp(firebaseConfig);
@@ -27,7 +26,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'test-bank-ddies-production';
 
-// Color Palette (Sunrise Glow)
+// Color Palette
 const palette = {
   coral: '#FF9A8B',
   peach: '#FFC3A0',
@@ -173,13 +172,13 @@ const formatTime = (totalSeconds) => {
 export default function App() {
   const [user, setUser] = useState(null);
   const [isDark, setIsDark] = useState(false);
-  const [view, setView] = useState('dashboard'); // dashboard, folder, deck, quiz, results, import, edit_deck
+  const [view, setView] = useState('dashboard');
   
   const [folders, setFolders] = useState([]);
   const [decks, setDecks] = useState([]);
+  const [todos, setTodos] = useState([]);
   const [progress, setProgress] = useState({}); 
   const [history, setHistory] = useState([]);
-  const [profile, setProfile] = useState({ streak: 0, lastActive: null });
 
   const [activeFolder, setActiveFolder] = useState(null);
   const [activeDeck, setActiveDeck] = useState(null);
@@ -193,9 +192,41 @@ export default function App() {
     setModal({ type: 'alert', title, message, onConfirm: () => setModal(null) });
   };
 
+  // --- TAB NAME AND FAVICON INJECTION ---
+  useEffect(() => {
+    document.title = "Test Bank-ddies";
+    
+    const svgIcon = `<svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="50" cy="25" r="22" fill="%23FF9A8B" />
+      <circle cx="74" cy="42" r="22" fill="%23FFC3A0" />
+      <circle cx="65" cy="70" r="22" fill="%23FECF6A" />
+      <circle cx="35" cy="70" r="22" fill="%23A1E3FF" />
+      <circle cx="26" cy="42" r="22" fill="%23FF9A8B" />
+      <circle cx="50" cy="50" r="16" fill="%23FFFFFF" />
+      <circle cx="50" cy="50" r="6" fill="%23A1E3FF" />
+    </svg>`;
+    
+    let link = document.querySelector("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement('link');
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    link.href = `data:image/svg+xml,${svgIcon}`;
+  }, []);
+
+  // --- AUTHENTICATION (FIXED REFRESH BUG) ---
   useEffect(() => {
     const initAuth = async () => {
       try {
+        // Wait to see if Firebase finds a saved Google/Anonymous session from IndexedDB
+        if (auth.authStateReady) {
+            await auth.authStateReady(); 
+        }
+        
+        // If a user exists (session restored), skip creating a new one!
+        if (auth.currentUser) return;
+
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
           await signInWithCustomToken(auth, __initial_auth_token);
         } else {
@@ -203,10 +234,16 @@ export default function App() {
         }
       } catch (err) {
         console.error("Auth Error:", err);
-        showAlert("Database Connection Error", `Firebase Authentication failed. If you deployed this app, please ensure your domain (e.g., your-app.vercel.app) is added to the 'Authorized domains' list in your Firebase Console Authentication settings. Error: ${err.message}`);
       }
     };
     initAuth();
+
+    // Catch Safari redirect login responses
+    getRedirectResult(auth).then((result) => {
+      if (result && result.user) {
+        setUser(result.user);
+      }
+    }).catch(console.error);
 
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
@@ -227,7 +264,6 @@ export default function App() {
     const collections = {
       folders: setFolders,
       decks: setDecks,
-      progress: setProgressData,
       history: setHistory,
     };
 
@@ -242,6 +278,13 @@ export default function App() {
       unsubscribes.push(unsub);
     });
 
+    const todosRef = collection(db, 'artifacts', appId, 'users', uid, 'todos');
+    const unsubTodos = onSnapshot(todosRef, (snap) => {
+      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => b.createdAt - a.createdAt);
+      setTodos(data);
+    }, err => console.error("Error loading todos:", err));
+    unsubscribes.push(unsubTodos);
+
     const progRef = collection(db, 'artifacts', appId, 'users', uid, 'progress');
     const unsubProg = onSnapshot(progRef, (snap) => {
       const progData = {};
@@ -250,42 +293,36 @@ export default function App() {
     }, err => console.error(err));
     unsubscribes.push(unsubProg);
 
-    const loadProfile = async () => {
-      try {
-        const profileRef = doc(db, 'artifacts', appId, 'users', uid, 'profile', 'data');
-        const snap = await getDocs(collection(db, 'artifacts', appId, 'users', uid, 'profile'));
-        let profData = { streak: 0, lastActive: null };
-        if (!snap.empty) {
-          profData = snap.docs[0].data();
-        }
-        
-        const today = new Date().toISOString().split('T')[0];
-        const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-
-        if (profData.lastActive !== today) {
-          if (profData.lastActive === yesterday) {
-            profData.streak += 1;
-          } else {
-            profData.streak = 1;
-          }
-          profData.lastActive = today;
-          await setDoc(profileRef, profData, { merge: true });
-        }
-        setProfile(profData);
-      } catch (error) {
-        console.error("Profile load error:", error);
-      }
-    };
-    loadProfile();
-
     return () => unsubscribes.forEach(u => u());
   }, [user]);
 
   const setProgressData = () => {}; 
 
+  // --- TODO LIST FUNCTIONS ---
+  const handleAddTodo = async (text) => {
+    if (!text.trim() || !user) return;
+    try {
+      const id = `todo_${Date.now()}`;
+      await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'todos', id), { text, completed: false, createdAt: Date.now() });
+    } catch (e) {
+      console.error("Error adding todo", e);
+    }
+  };
+
+  const toggleTodo = async (todo) => {
+    if (!user) return;
+    await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'todos', todo.id), { completed: !todo.completed }, { merge: true });
+  };
+
+  const handleDeleteTodo = async (id) => {
+    if (!user) return;
+    await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'todos', id));
+  };
+
+
   const handleCreateFolder = () => {
     if (!user) {
-      showAlert("Not Connected", "The app is not connected to the database. Make sure your domain is authorized in Firebase Settings.");
+      showAlert("Not Connected", "The app is not connected to the database.");
       return;
     }
     setModal({
@@ -304,10 +341,7 @@ export default function App() {
   };
 
   const handleEditFolder = (folder) => {
-    if (!user) {
-      showAlert("Not Connected", "The app is not connected to the database.");
-      return;
-    }
+    if (!user) return;
     setModal({
       type: 'folder',
       title: 'Edit Folder',
@@ -326,10 +360,7 @@ export default function App() {
   };
 
   const handleCreateDeck = async (folderId, deckData) => {
-    if (!user) {
-      showAlert("Not Connected", "The app is not connected to the database.");
-      return;
-    }
+    if (!user) return;
     const id = `deck_${Date.now()}`;
     await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'decks', id), {
       ...deckData,
@@ -362,10 +393,7 @@ export default function App() {
   };
 
   const deleteItem = (col, id) => {
-    if (!user) {
-      showAlert("Not Connected", "The app is not connected to the database.");
-      return;
-    }
+    if (!user) return;
     setModal({
       type: 'confirm',
       title: 'Confirm Deletion',
@@ -380,44 +408,33 @@ export default function App() {
     });
   };
 
-import { signInWithRedirect, getRedirectResult } from 'firebase/auth'; // Update your imports at the top
+  const googleSignIn = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 
-// Inside your App component:
-const googleSignIn = async () => {
-  try {
-    const provider = new GoogleAuthProvider();
-    
-    // Check if the user is using Safari
-    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-
-    if (isSafari) {
-      // Safari prefers redirects
-      await signInWithRedirect(auth, provider);
-    } else {
-      // Other browsers handle popups fine
-      if (auth.currentUser && auth.currentUser.isAnonymous) {
-         await linkWithPopup(auth.currentUser, provider);
+      if (isSafari) {
+         // Fixes Safari cross-site tracking block
+         await signInWithRedirect(auth, provider);
       } else {
+         if (auth.currentUser && auth.currentUser.isAnonymous) {
+            await linkWithPopup(auth.currentUser, provider);
+         } else {
+            await signInWithPopup(auth, provider);
+         }
+      }
+    } catch (error) {
+      if (error.code === 'auth/credential-already-in-use') {
+         const provider = new GoogleAuthProvider();
          await signInWithPopup(auth, provider);
+      } else if (error.code === 'auth/unauthorized-domain') {
+         showAlert("Domain Unauthorized", "Your domain is not authorized in Firebase. Please add this domain to the Authorized Domains list in your Firebase Console (Authentication > Settings).");
+      } else {
+         showAlert("Notice", "Google Sign-In might be restricted in this environment. Error: " + error.message);
+         console.error(error);
       }
     }
-  } catch (error) {
-    showAlert("Notice", "Sign-In error: " + error.message);
-    console.error(error);
-  }
-};
-
-// You'll also want to add this right after your initAuth() inside the first useEffect
-// to catch the user returning from the Safari redirect:
-useEffect(() => {
-  getRedirectResult(auth).then((result) => {
-    if (result && result.user) {
-      setUser(result.user);
-    }
-  }).catch((error) => {
-    console.error("Redirect Error:", error);
-  });
-}, []);
+  };
 
   // --- INTERNAL UI COMPONENTS ---
 
@@ -503,8 +520,8 @@ useEffect(() => {
       <circle cx="65" cy="70" r="22" fill="var(--yellow)" />
       <circle cx="35" cy="70" r="22" fill="var(--blue)" />
       <circle cx="26" cy="42" r="22" fill="var(--coral)" />
-      <circle cx="50" cy="50" r="16" fill="currentColor" opacity="0.9" />
-      <circle cx="50" cy="50" r="6" fill="var(--blue)" opacity="0.8" />
+      <circle cx="50" cy="50" r="16" fill="#FFFFFF" />
+      <circle cx="50" cy="50" r="6" fill="var(--blue)" />
     </svg>
   );
 
@@ -545,40 +562,61 @@ useEffect(() => {
     </nav>
   );
 
-  const CherryBlossomTree = ({ streak }) => {
-    const maxBlossoms = 20;
-    const blossoms = Math.min(streak, maxBlossoms);
-    
+  const TodoList = () => {
+    const [newTodo, setNewTodo] = useState('');
+
     return (
-      <div className="flex flex-col items-center p-5 surface rounded-3xl shadow-sm text-center">
-        <h2 className="text-lg font-black mb-1 text-[var(--pd-deep)] dark:text-white uppercase tracking-tight">Streak</h2>
-        <div className="relative w-24 h-24 flex items-center justify-center mt-2">
-          <div className="w-3 h-16 bg-[var(--pd-ripe)] dark:bg-slate-400 absolute bottom-0 rounded-t-lg"></div>
-          <div className="w-1 h-10 bg-[var(--pd-ripe)] dark:bg-slate-400 absolute bottom-4 -rotate-45 -ml-6 rounded"></div>
-          <div className="w-1 h-8 bg-[var(--pd-ripe)] dark:bg-slate-400 absolute bottom-8 rotate-45 ml-4 rounded"></div>
-          
-          {Array.from({ length: blossoms }).map((_, i) => {
-            const angle = (i * 137.5) % 360; 
-            const radius = 12 + (i * 1.2);
-            const x = Math.cos(angle * Math.PI / 180) * radius;
-            const y = Math.sin(angle * Math.PI / 180) * radius - 15;
-            const colors = ['var(--coral)', 'var(--peach)', 'var(--yellow)', 'var(--blue)'];
-            const color = colors[i % 4];
-            
-            return (
-              <div 
-                key={i}
-                className="absolute w-3.5 h-3.5 rounded-full opacity-90 animate-pulse shadow-sm"
-                style={{ transform: `translate(${x}px, ${y}px)`, backgroundColor: color }}
-              />
-            );
-          })}
-          {streak === 0 && <span className="absolute bottom-20 text-[10px] font-bold opacity-60 uppercase tracking-widest text-[var(--pd-muted)]">No blossoms</span>}
+      <div className="flex flex-col p-6 surface rounded-3xl shadow-md h-full min-h-[300px]">
+        <h2 className="text-xl font-black mb-4 text-[var(--pd-deep)] dark:text-white uppercase tracking-tight flex items-center gap-2">
+          <CheckCircle size={22} className="text-[var(--coral)]" /> Tasks
+        </h2>
+        
+        <div className="flex gap-2 mb-5">
+          <input
+            type="text"
+            value={newTodo}
+            onChange={e => setNewTodo(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && (handleAddTodo(newTodo), setNewTodo(''))}
+            className="flex-1 p-3 rounded-xl border-2 border-[var(--blue-soft)] bg-transparent text-sm focus:outline-none focus:border-[var(--coral)] font-semibold text-[var(--pd-ripe)] dark:text-slate-200"
+            placeholder="Add a new task..."
+          />
+          <button 
+            onClick={() => { handleAddTodo(newTodo); setNewTodo(''); }} 
+            className="bg-[var(--coral)] text-white px-4 rounded-xl shadow-sm hover:bg-[#E86A58] transition-colors"
+          >
+            <Plus size={20} />
+          </button>
         </div>
-        <p className="text-xs font-bold opacity-80 mt-4 text-[var(--pd-old)] dark:text-slate-300 bg-[var(--blue-soft)] px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-           <Trophy size={14} className="text-[var(--coral)]" />
-           {streak} Day{streak !== 1 ? 's' : ''}
-        </p>
+
+        <div className="overflow-y-auto space-y-3 flex-1 pr-2">
+          {todos.length === 0 ? (
+            <div className="text-center mt-6">
+              <p className="text-sm font-bold opacity-50 text-[var(--pd-old)] dark:text-slate-400">No pending tasks.</p>
+              <p className="text-xs font-semibold opacity-40 mt-1">Add something above to get started!</p>
+            </div>
+          ) : (
+            todos.map(t => (
+              <div key={t.id} className="flex items-start gap-3 p-3.5 bg-black/5 dark:bg-white/5 rounded-xl group transition-colors border border-transparent hover:border-[var(--blue-soft)]">
+                <input 
+                  type="checkbox" 
+                  checked={t.completed} 
+                  onChange={() => toggleTodo(t)} 
+                  className="mt-1 w-4 h-4 accent-[var(--coral)] cursor-pointer shadow-sm" 
+                />
+                <span className={`flex-1 text-sm font-semibold transition-all ${t.completed ? 'line-through opacity-40 italic' : 'text-[var(--pd-ripe)] dark:text-slate-200'}`}>
+                  {t.text}
+                </span>
+                <button 
+                  onClick={() => handleDeleteTodo(t.id)} 
+                  className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all p-1"
+                  title="Delete Task"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     );
   };
@@ -587,7 +625,6 @@ useEffect(() => {
     const [currentTime, setCurrentTime] = useState(null);
     
     // Using a mounted state avoids Vercel/Next.js React Hydration errors
-    // when using Date() that differs between server and client.
     useEffect(() => {
       setCurrentTime(new Date());
       const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -686,8 +723,9 @@ useEffect(() => {
             </div>
           </div>
 
+          {/* Replaced Cherry Blossom tree with Todo List */}
           <div className="xl:col-span-1 flex flex-col gap-8">
-            <CherryBlossomTree streak={profile.streak} />
+            <TodoList />
           </div>
 
         </div>
