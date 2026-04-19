@@ -426,7 +426,6 @@ export default function App() {
       title: 'Confirm Deletion',
       message: `Are you sure you want to delete this? This action cannot be undone.`,
       onConfirm: async () => {
-        // Deep deletion: If deleting a folder, also delete all decks inside it to prevent ghost stats
         if (col === 'folders') {
           const relatedDecks = decks.filter(d => d.folderId === id);
           for (let deck of relatedDecks) {
@@ -622,7 +621,6 @@ export default function App() {
           <CheckCircle size={22} className="text-[var(--coral)]" /> Tasks
         </h2>
         
-        {/* Adjusted to perfectly embed the button within the input bar */}
         <div className="relative mb-5 w-full">
           <input
             type="text"
@@ -676,7 +674,6 @@ export default function App() {
   const Dashboard = () => {
     const [currentTime, setCurrentTime] = useState(null);
     
-    // Using a mounted state avoids Vercel/Next.js React Hydration errors
     useEffect(() => {
       setCurrentTime(new Date());
       const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -688,7 +685,6 @@ export default function App() {
     if (hrs < 12) greeting = 'Good Morning';
     else if (hrs < 18) greeting = 'Good Afternoon';
 
-    // Smart display name extraction
     let firstName = 'Student';
     if (user && !user.isAnonymous) {
        const providerName = user.displayName || user.providerData?.[0]?.displayName;
@@ -697,12 +693,10 @@ export default function App() {
        }
     }
 
-    // Determine Profile Picture Logic
     const defaultAvatarUrl = `https://api.dicebear.com/7.x/notionists/svg?seed=${user?.uid || 'guest'}&backgroundColor=FF9A8B`;
     const googlePhotoUrl = user && !user.isAnonymous ? user.photoURL : null;
     const profileImageUrl = customPhoto || googlePhotoUrl || defaultAvatarUrl;
 
-    // Filter to only count decks that belong to an existing folder
     const validDecks = decks.filter(d => folders.some(f => f.id === d.folderId));
 
     let masteredCount = 0;
@@ -981,20 +975,17 @@ export default function App() {
           let aIndex = 0;
           let options = q.options || q.o || q.choices || [];
           
-          // Smart Answer String Detection 
           if (q.answer !== undefined) {
             if (typeof q.answer === 'number') {
               aIndex = q.answer;
             } else if (typeof q.answer === 'string') {
-              // Exact string match
               const matchIdx = options.findIndex(opt => opt.trim().toLowerCase() === q.answer.trim().toLowerCase());
               if (matchIdx !== -1) {
                 aIndex = matchIdx;
               } else {
-                // Check if it's "A" or "A. Something"
                 const letterMatch = q.answer.trim().match(/^([a-eA-E])/);
                 if (letterMatch) {
-                  aIndex = letterMatch[1].toUpperCase().charCodeAt(0) - 65; // A->0, B->1
+                  aIndex = letterMatch[1].toUpperCase().charCodeAt(0) - 65;
                 }
               }
             }
@@ -1004,7 +995,6 @@ export default function App() {
             aIndex = parseInt(q.answerIndex) || 0;
           }
 
-          // Safety Bounds
           if (aIndex < 0 || aIndex >= Math.max(options.length, 1)) {
             aIndex = 0;
           }
@@ -1448,6 +1438,7 @@ export default function App() {
         currentIndex: 0,
         score: 0,
         wrongAnswers: [],
+        unanswered: [], 
         completed: false,
         selectedOpt: null,
         isAnswered: false,
@@ -1606,31 +1597,39 @@ export default function App() {
   };
 
   const QuizRunner = () => {
-    const { questions, currentIndex, score, wrongAnswers, selectedOpt, isAnswered, timeMode, timeLimit, timeScope } = activeQuiz;
+    const { questions, currentIndex, score, wrongAnswers, unanswered, selectedOpt, isAnswered, timeMode, timeLimit, timeScope } = activeQuiz;
     const q = questions[currentIndex];
     
+    // Quiz-level timer states (Persists across questions)
     const [quizElapsed, setQuizElapsed] = useState(0);
-    const [quizRemaining, setQuizRemaining] = useState(timeMode === 'timer' ? timeLimit * 60 : 0);
+    const [quizRemaining, setQuizRemaining] = useState(timeMode === 'timer' && timeScope === 'quiz' ? timeLimit * 60 : 0);
+    
+    // Question-level timer states (Resets per question)
     const [qElapsed, setQElapsed] = useState(0);
-    const [qRemaining, setQRemaining] = useState(timeMode === 'timer' ? timeLimit * 60 : 0);
+    const [qRemaining, setQRemaining] = useState(timeMode === 'timer' && timeScope === 'question' ? timeLimit * 60 : 0);
 
     const submitQuizRef = useRef(null);
 
+    // Reset ONLY question-level timer when moving to a new question
     useEffect(() => {
        setQElapsed(0);
-       setQRemaining(timeMode === 'timer' ? timeLimit * 60 : 0);
-    }, [currentIndex, timeMode, timeLimit]);
+       if (timeMode === 'timer' && timeScope === 'question') {
+          setQRemaining(timeLimit * 60);
+       }
+    }, [currentIndex, timeMode, timeLimit, timeScope]);
 
+    // Master tick loop
     useEffect(() => {
-      if (timeMode === 'none' || activeQuiz.completed) return;
+      if (timeMode === 'none' || activeQuiz.completed || isAnswered) return;
       const timerId = setInterval(() => {
          setQuizElapsed(prev => prev + 1);
-         setQuizRemaining(prev => Math.max(0, prev - 1));
+         if (timeScope === 'quiz') setQuizRemaining(prev => Math.max(0, prev - 1));
+         
          setQElapsed(prev => prev + 1);
-         setQRemaining(prev => Math.max(0, prev - 1));
+         if (timeScope === 'question') setQRemaining(prev => Math.max(0, prev - 1));
       }, 1000);
       return () => clearInterval(timerId);
-    }, [timeMode, activeQuiz.completed]);
+    }, [timeMode, activeQuiz.completed, isAnswered, timeScope]);
 
     const handleTimeout = () => {
        if (isAnswered) return;
@@ -1640,17 +1639,31 @@ export default function App() {
        setActiveQuiz(prev => ({
          ...prev,
          wrongAnswers: [...prev.wrongAnswers, q],
+         unanswered: [...prev.unanswered, q],
          selectedOpt: -1, 
          isAnswered: true
        }));
     };
 
+    // Auto-proceed logic for Question Timeout
+    useEffect(() => {
+      let t;
+      if (isAnswered && selectedOpt === -1) {
+         // Proceed after a brief delay so the user sees "Time's Up"
+         t = setTimeout(() => {
+            handleNext();
+         }, 1500); 
+      }
+      return () => clearTimeout(t);
+    }, [isAnswered, selectedOpt]);
+
+    // Check for Timeouts
     useEffect(() => {
        if (timeMode === 'timer' && !activeQuiz.completed && !isAnswered) {
           if (timeScope === 'quiz' && quizRemaining === 0) {
-             submitQuizRef.current();
+             submitQuizRef.current(); // Ends whole quiz instantly
           } else if (timeScope === 'question' && qRemaining === 0) {
-             handleTimeout();
+             handleTimeout(); // Marks question unanswered
           }
        }
     }, [quizRemaining, qRemaining, timeMode, timeScope, activeQuiz.completed, isAnswered]);
@@ -1667,6 +1680,7 @@ export default function App() {
          score: activeQuiz.score,
          total: questions.length,
          wrongAnswers: activeQuiz.wrongAnswers,
+         unanswered: activeQuiz.unanswered,
          timeTaken: timeMode === 'none' ? null : quizElapsed,
          timeMode
       });
@@ -1860,8 +1874,10 @@ export default function App() {
   };
 
   const ResultsView = () => {
-    const { score, total, wrongAnswers, timeTaken, timeMode } = quizResults;
+    const { score, total, wrongAnswers, unanswered = [], timeTaken, timeMode } = quizResults;
     const percent = Math.round((score / total) * 100);
+    const incorrectCount = wrongAnswers.length - unanswered.length;
+    const avgTime = timeTaken ? Math.round(timeTaken / total) : null;
     
     let message = "Keep learning!";
     if (percent === 100) message = "Perfect Score!";
@@ -1873,6 +1889,7 @@ export default function App() {
         currentIndex: 0,
         score: 0,
         wrongAnswers: [],
+        unanswered: [],
         completed: false,
         selectedOpt: null,
         isAnswered: false,
@@ -1884,8 +1901,8 @@ export default function App() {
     };
 
     return (
-      <div className="max-w-3xl mx-auto animate-fade-in text-center py-10">
-         <div className="surface p-12 rounded-[2rem] shadow-2xl mb-10 relative overflow-hidden border-t-8 border-[var(--coral)]">
+      <div className="max-w-4xl mx-auto animate-fade-in text-center py-10">
+         <div className="surface p-8 md:p-12 rounded-[2rem] shadow-2xl mb-10 relative overflow-hidden border-t-8 border-[var(--coral)]">
             <h2 className="text-4xl font-black mb-3 text-[var(--pd-deep)] dark:text-white uppercase tracking-tight">{message}</h2>
             <p className="opacity-70 mb-10 font-black uppercase tracking-widest text-[var(--pd-old)] dark:text-slate-300">Quiz Summary</p>
             
@@ -1903,12 +1920,19 @@ export default function App() {
               <div className="absolute text-6xl font-black text-[var(--coral)]">{percent}%</div>
             </div>
 
-            <div className="flex justify-center gap-8 md:gap-16 text-lg font-black uppercase tracking-wider flex-wrap">
+            <div className="flex justify-center gap-6 md:gap-12 text-lg font-black uppercase tracking-wider flex-wrap">
               {timeMode !== 'none' && timeTaken !== null && (
-                 <div className="flex flex-col"><span className="text-4xl text-[var(--blue)] mb-1">{formatTime(timeTaken)}</span> <span className="text-sm opacity-70 text-[var(--pd-old)] dark:text-slate-300">Time Spent</span></div>
+                 <>
+                   <div className="flex flex-col"><span className="text-3xl md:text-4xl text-[var(--blue)] mb-1">{formatTime(timeTaken)}</span> <span className="text-xs md:text-sm opacity-70 text-[var(--pd-old)] dark:text-slate-300">Total Time</span></div>
+                   <div className="flex flex-col"><span className="text-3xl md:text-4xl text-[var(--blue)] mb-1">{formatTime(avgTime)}</span> <span className="text-xs md:text-sm opacity-70 text-[var(--pd-old)] dark:text-slate-300">Avg Time / Q</span></div>
+                 </>
               )}
-              <div className="flex flex-col"><span className="text-4xl text-green-500 mb-1">{score}</span> <span className="text-sm opacity-70 text-[var(--pd-old)] dark:text-slate-300">Correct</span></div>
-              <div className="flex flex-col"><span className="text-4xl text-red-500 mb-1">{total - score}</span> <span className="text-sm opacity-70 text-[var(--pd-old)] dark:text-slate-300">Incorrect</span></div>
+              <div className="flex flex-col"><span className="text-3xl md:text-4xl text-green-500 mb-1">{score}</span> <span className="text-xs md:text-sm opacity-70 text-[var(--pd-old)] dark:text-slate-300">Correct</span></div>
+              <div className="flex flex-col"><span className="text-3xl md:text-4xl text-red-500 mb-1">{incorrectCount}</span> <span className="text-xs md:text-sm opacity-70 text-[var(--pd-old)] dark:text-slate-300">Incorrect</span></div>
+              
+              {(unanswered.length > 0 || timeMode === 'timer') && (
+                 <div className="flex flex-col"><span className="text-3xl md:text-4xl text-orange-400 mb-1">{unanswered.length}</span> <span className="text-xs md:text-sm opacity-70 text-[var(--pd-old)] dark:text-slate-300">Unanswered</span></div>
+              )}
             </div>
          </div>
 
