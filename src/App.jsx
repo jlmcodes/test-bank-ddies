@@ -1597,14 +1597,16 @@ export default function App() {
   };
 
   const QuizRunner = () => {
-    const { questions, currentIndex, score, wrongAnswers, unanswered, selectedOpt, isAnswered, timeMode, timeLimit, timeScope } = activeQuiz;
+    const { questions, currentIndex, score, wrongAnswers, unanswered = [], selectedOpt, isAnswered, timeMode, timeLimit, timeScope } = activeQuiz;
     const q = questions[currentIndex];
     
-    // Quiz-level timer states (Persists across questions)
-    const [quizElapsed, setQuizElapsed] = useState(0);
+    // Independent Global Accumulator (Tracks total time spent on the quiz, never resets)
+    const [totalQuizElapsed, setTotalQuizElapsed] = useState(0);
+    
+    // Quiz-level UI Timer state
     const [quizRemaining, setQuizRemaining] = useState(timeMode === 'timer' && timeScope === 'quiz' ? timeLimit * 60 : 0);
     
-    // Question-level timer states (Resets per question)
+    // Question-level UI Timer states
     const [qElapsed, setQElapsed] = useState(0);
     const [qRemaining, setQRemaining] = useState(timeMode === 'timer' && timeScope === 'question' ? timeLimit * 60 : 0);
 
@@ -1622,14 +1624,22 @@ export default function App() {
     useEffect(() => {
       if (timeMode === 'none' || activeQuiz.completed || isAnswered) return;
       const timerId = setInterval(() => {
-         setQuizElapsed(prev => prev + 1);
-         if (timeScope === 'quiz') setQuizRemaining(prev => Math.max(0, prev - 1));
+         // Accumulate global time
+         setTotalQuizElapsed(prev => prev + 1);
          
+         // Tick down global quiz timer if applicable
+         if (timeScope === 'quiz') {
+            setQuizRemaining(prev => Math.max(0, prev - 1));
+         }
+         
+         // Tick up/down question-level timers
          setQElapsed(prev => prev + 1);
-         if (timeScope === 'question') setQRemaining(prev => Math.max(0, prev - 1));
+         if (timeScope === 'question') {
+            setQRemaining(prev => Math.max(0, prev - 1));
+         }
       }, 1000);
       return () => clearInterval(timerId);
-    }, [timeMode, activeQuiz.completed, isAnswered, timeScope]);
+    }, [timeMode, timeScope, activeQuiz.completed, isAnswered]);
 
     const handleTimeout = () => {
        if (isAnswered) return;
@@ -1638,8 +1648,8 @@ export default function App() {
        saveProgress(activeDeck.id, currentDeckProg);
        setActiveQuiz(prev => ({
          ...prev,
-         wrongAnswers: [...prev.wrongAnswers, q],
-         unanswered: [...prev.unanswered, q],
+         wrongAnswers: [...(prev.wrongAnswers || []), q],
+         unanswered: [...(prev.unanswered || []), q],
          selectedOpt: -1, 
          isAnswered: true
        }));
@@ -1649,7 +1659,6 @@ export default function App() {
     useEffect(() => {
       let t;
       if (isAnswered && selectedOpt === -1) {
-         // Proceed after a brief delay so the user sees "Time's Up"
          t = setTimeout(() => {
             handleNext();
          }, 1500); 
@@ -1669,6 +1678,12 @@ export default function App() {
     }, [quizRemaining, qRemaining, timeMode, timeScope, activeQuiz.completed, isAnswered]);
 
     submitQuizRef.current = () => {
+      // Find all questions that were never even reached due to "Whole Set" timeout
+      const unreachedQs = questions.slice(isAnswered ? currentIndex + 1 : currentIndex);
+      
+      const finalWrongAnswers = [...(activeQuiz.wrongAnswers || []), ...unreachedQs];
+      const finalUnanswered = [...(activeQuiz.unanswered || []), ...unreachedQs];
+
       const historyEntry = {
         deckId: activeDeck.id,
         score: activeQuiz.score,
@@ -1676,12 +1691,14 @@ export default function App() {
         type: 'Standard'
       };
       saveHistory(historyEntry);
+      
       setQuizResults({
+         questions: questions, // Persist questions for safe retakes
          score: activeQuiz.score,
          total: questions.length,
-         wrongAnswers: activeQuiz.wrongAnswers,
-         unanswered: activeQuiz.unanswered,
-         timeTaken: timeMode === 'none' ? null : quizElapsed,
+         wrongAnswers: finalWrongAnswers,
+         unanswered: finalUnanswered,
+         timeTaken: timeMode === 'none' ? null : totalQuizElapsed,
          timeMode
       });
       setView('results');
@@ -1723,7 +1740,7 @@ export default function App() {
       setActiveQuiz(prev => ({
         ...prev,
         score: isCorrect ? prev.score + 1 : prev.score,
-        wrongAnswers: isCorrect ? prev.wrongAnswers : [...prev.wrongAnswers, q],
+        wrongAnswers: isCorrect ? (prev.wrongAnswers || []) : [...(prev.wrongAnswers || []), q],
         selectedOpt: idx,
         isAnswered: true
       }));
@@ -1753,9 +1770,11 @@ export default function App() {
     let isPulsing = false;
     if (timeMode !== 'none') {
        if (timeScope === 'quiz') {
-          displayTimeStr = formatTime(timeMode === 'timer' ? quizRemaining : quizElapsed);
+          // Quiz scope strictly uses global timer vars
+          displayTimeStr = formatTime(timeMode === 'timer' ? quizRemaining : totalQuizElapsed);
           isPulsing = timeMode === 'timer' && quizRemaining <= 60;
        } else {
+          // Question scope uses local timer vars
           displayTimeStr = formatTime(timeMode === 'timer' ? qRemaining : qElapsed);
           isPulsing = timeMode === 'timer' && qRemaining <= 10;
        }
@@ -1769,7 +1788,7 @@ export default function App() {
                 <span className="text-sm font-black uppercase tracking-widest opacity-70 text-[var(--pd-ripe)] dark:text-slate-200">Question {currentIndex + 1} of {questions.length}</span>
                 <div className="flex items-center gap-5 text-sm font-black uppercase tracking-wider">
                    <span className="flex items-center gap-1.5 text-green-600 dark:text-green-400"><CheckCircle size={16}/> {score}</span>
-                   <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400"><XCircle size={16}/> {wrongAnswers.length}</span>
+                   <span className="flex items-center gap-1.5 text-red-600 dark:text-red-400"><XCircle size={16}/> {(wrongAnswers || []).length}</span>
                 </div>
              </div>
              
@@ -1874,18 +1893,22 @@ export default function App() {
   };
 
   const ResultsView = () => {
-    const { score, total, wrongAnswers, unanswered = [], timeTaken, timeMode } = quizResults;
+    const { score, total, wrongAnswers, unanswered, timeTaken, timeMode } = quizResults;
+    
     const percent = Math.round((score / total) * 100);
-    const incorrectCount = wrongAnswers.length - unanswered.length;
     const avgTime = timeTaken ? Math.round(timeTaken / total) : null;
     
+    // Explicitly incorrect answers minus the unanswered/timed-out ones
+    const incorrectCount = wrongAnswers.length - (unanswered?.length || 0);
+    const totalUnanswered = unanswered?.length || 0;
+
     let message = "Keep learning!";
     if (percent === 100) message = "Perfect Score!";
     else if (percent >= 80) message = "Great Job!";
 
     const handleRetakeWrong = () => {
        setActiveQuiz({
-        questions: wrongAnswers,
+        questions: wrongAnswers, // automatically contains both explicit wrong & explicit unanswered
         currentIndex: 0,
         score: 0,
         wrongAnswers: [],
@@ -1930,8 +1953,8 @@ export default function App() {
               <div className="flex flex-col"><span className="text-3xl md:text-4xl text-green-500 mb-1">{score}</span> <span className="text-xs md:text-sm opacity-70 text-[var(--pd-old)] dark:text-slate-300">Correct</span></div>
               <div className="flex flex-col"><span className="text-3xl md:text-4xl text-red-500 mb-1">{incorrectCount}</span> <span className="text-xs md:text-sm opacity-70 text-[var(--pd-old)] dark:text-slate-300">Incorrect</span></div>
               
-              {(unanswered.length > 0 || timeMode === 'timer') && (
-                 <div className="flex flex-col"><span className="text-3xl md:text-4xl text-orange-400 mb-1">{unanswered.length}</span> <span className="text-xs md:text-sm opacity-70 text-[var(--pd-old)] dark:text-slate-300">Unanswered</span></div>
+              {(totalUnanswered > 0 || timeMode === 'timer') && (
+                 <div className="flex flex-col"><span className="text-3xl md:text-4xl text-orange-400 mb-1">{totalUnanswered}</span> <span className="text-xs md:text-sm opacity-70 text-[var(--pd-old)] dark:text-slate-300">Unanswered</span></div>
               )}
             </div>
          </div>
